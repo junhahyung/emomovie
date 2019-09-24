@@ -17,7 +17,10 @@ Python3, PyQT5
 **Output form**:
 
 X1 y1 timestamp1
+
 X2 y2 timestamp2
+
 .
+
 .
 
