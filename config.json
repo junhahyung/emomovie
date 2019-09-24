@@ -1,0 +1,6 @@
+{
+    "radius": 10,
+    "greentime": 10,
+    "yellowtime": 5,
+    "reco_freq": 5
+}
