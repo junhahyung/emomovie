@@ -1,24 +1,31 @@
-from PyQt5.QtCore import QDir, Qt, QUrl, pyqtSignal, QPoint, QSize, QTime
+from PyQt5.QtCore import QDir, Qt, QUrl, pyqtSignal, QPoint, QSize, QTime, QFile, QFileInfo, QDataStream, QBuffer, QByteArray, QIODevice, QTimer
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel,
                 QPushButton, QSizePolicy, QSlider, QStyle, QVBoxLayout, QWidget, QFrame)
-from PyQt5.QtWidgets import QMainWindow,QWidget, QPushButton, QAction
+from PyQt5.QtWidgets import QMainWindow,QWidget, QPushButton, QAction, QLCDNumber
 from PyQt5.QtGui import * 
 import sys
 import os
 import math
 import json
+import time
 
 class VideoWindow(QMainWindow):
     pevent = pyqtSignal(float)
-    def __init__(self, movietitle, seqtxt, outputtxt, parent=None):
+    def __init__(self, seqtxt, outputtxt, duration, parent=None):
         super(VideoWindow, self).__init__(parent)
-        self.setWindowTitle("[Emo Player] " + movietitle)
+        self.setWindowTitle("[Emo Player] ")
         self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
-        videoWidget = QVideoWidget()
-        self.duration = 0
+        #videoWidget = QVideoWidget()
+        self.lcd = QLCDNumber(self)
+        self.duration = 1000*int(duration)
+        self.lastwrite = 0
         self.coor = (0,0)
+
+        self.lcdtime = QTimer()
+        self.lcdtime.timeout.connect(self.lcdprint)
+        self.lcdcnt = 5
         
         #json configuration
         with open("config.json", "r") as fp:
@@ -28,8 +35,11 @@ class VideoWindow(QMainWindow):
         self.yellowtime = config['yellowtime'] 
         self.reco_freq = config['reco_freq']
         
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.time)
 
-        #input
+        self.state = 'stopped'
+        self.position = 0
         self.seqtxt = seqtxt
         self.outputtxt = outputtxt
 
@@ -44,15 +54,13 @@ class VideoWindow(QMainWindow):
         self.positionSlider.setRange(0,0)
         self.positionSlider.sliderMoved.connect(self.setPosition)
 
+        self.duration /= 1000 
+        self.positionSlider.setRange(0, self.duration)
+
         self.errorLabel = QLabel()
         self.errorLabel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
 
         self.labelDuration = QLabel()
-
-        openAction = QAction(QIcon('open.png'), '&Open', self)        
-        openAction.setShortcut('Ctrl+O')
-        openAction.setStatusTip('Open movie')
-        openAction.triggered.connect(self.openFile)
 
         exitAction = QAction(QIcon('exit.png'), '&Exit', self)
         exitAction.setShortcut('Ctrl+Q')
@@ -62,7 +70,6 @@ class VideoWindow(QMainWindow):
         menuBar = self.menuBar()
         menuBar.setNativeMenuBar(False)
         fileMenu = menuBar.addMenu('&File')
-        fileMenu.addAction(openAction)
         fileMenu.addAction(exitAction)
 
         wid = QWidget(self)
@@ -75,7 +82,8 @@ class VideoWindow(QMainWindow):
         controlLayout.addWidget(self.labelDuration)
 
         layout = QVBoxLayout()
-        layout.addWidget(videoWidget,4)
+        layout.addWidget(self.lcd)
+        #layout.addWidget(videoWidget,4)
         layout.addLayout(controlLayout)
         layout.addWidget(self.errorLabel)
 
@@ -93,15 +101,14 @@ class VideoWindow(QMainWindow):
 
         wid.setLayout(totalLayout)
 
-        self.mediaPlayer.setVideoOutput(videoWidget)
-        self.mediaPlayer.stateChanged.connect(self.mediaStateChanged)
-        self.mediaPlayer.positionChanged.connect(self.positionChanged)
-        self.mediaPlayer.durationChanged.connect(self.durationChanged)
-        self.mediaPlayer.error.connect(self.handleError)
 
-        url = os.path.join(os.getcwd(), movietitle) 
-        self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(url)))
+        #url = os.path.join(os.getcwd(), movietitle) 
+        #self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(url)))
         self.playButton.setEnabled(True)
+
+    def time(self):
+        self.position += 0.01 
+        self.positionChanged()
 
     def changeCoor(self,x,y):
         x,y =  (self.radius*float(x-335)/237, self.radius*float(-1*(y-326))/237)
@@ -142,41 +149,47 @@ class VideoWindow(QMainWindow):
         key = event.key()
         self.play()
 
-    def openFile(self):
-        fileName, _ = QFileDialog.getOpenFileName(self, "Open Movie", QDir.homePath())
-
-        if fileName != '':
-            self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(fileName)))
-            self.playButton.setEnabled(True)
 
     def exitCall(self):
         sys.exit(app.exec_())
 
-    def play(self):
-        if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
-            self.mediaPlayer.pause()
-            self.statusBar().showMessage('paused')
+    def lcdprint(self):
+        self.lcd.display(self.lcdcnt) 
+        if 1<=self.lcdcnt and self.lcdcnt<= 5:
+            self.lcdcnt = self.lcdcnt -1
         else:
-            self.mediaPlayer.play()
+            self.lcdcnt = 5
+            self.state = 'playing'
             self.statusBar().showMessage('playing')
-
-    def mediaStateChanged(self, state):
-        if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
             self.playButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
-        else:
+            self.timer.start(10)
+            self.lcdtime.stop()
+            
+    def play(self):
+        if self.state == 'playing':
+            self.state = 'paused'
+            self.statusBar().showMessage('paused')
             self.playButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
+            self.timer.stop()
 
-    def positionChanged(self, position):
-        position /= 1000
-        self.position = position
-        self.pevent.emit(position)
-        self.positionSlider.setValue(position)
-        self.updateDurationInfo(position)
+        else:
+            #self.lcdtime.connect(self.lcd)
+            self.lcdtime.start(1000)
+            self.lcdtime.start(1000)
+            self.lcdtime.start(1000)
+            self.lcdtime.start(1000)
+            self.lcdtime.start(1000)
 
-        if int(position) % 10 == 0 and position < self.duration:
-            print(position)
-        if int(position) in self.greentarget and int(position) % self.reco_freq == 0:
+
+
+    def positionChanged(self):
+        self.pevent.emit(self.position)
+        self.positionSlider.setValue(self.position)
+        self.updateDurationInfo(self.position)
+
+        if int(self.position) in self.greentarget and int(self.position) % self.reco_freq == 0 and self.lastwrite < int(self.position):
             self.target_writeCoor()
+            self.lastwrite = self.position
 
     def updateDurationInfo(self, currentInfo):
         duration = self.duration
@@ -195,7 +208,7 @@ class VideoWindow(QMainWindow):
         self.duration = duration
 
     def setPosition(self, position):
-        self.mediaPlayer.setPosition(position)
+        self.position = position
 
     def handleError(self):
         self.playButton.setEnabled(False)
@@ -234,6 +247,7 @@ class Tracker(QLabel):
         QWidget.__init__(self, parent)
         self.path = QPainterPath()    
         self.setMouseTracking(True)
+        self.position=0
 
         self.targettime = parent.targettime
 
