@@ -7,7 +7,7 @@ Python3, PyQT5
 
 **Run** 
 
-*$ python3 player.py [target_sequence] [output_file.txt] [duration in sec]*
+*$ python3 player.py [movie title] [target_sequence] [output_file.txt]*
 
 **Output**
 

@@ -107,8 +107,9 @@ class VideoWindow(QMainWindow):
         self.playButton.setEnabled(True)
 
     def time(self):
-        self.position += 0.01 
-        self.positionChanged()
+        if self.position<self.duration:
+            self.position += 0.01 
+            self.positionChanged()
 
     def changeCoor(self,x,y):
         x,y =  (self.radius*float(x-335)/237, self.radius*float(-1*(y-326))/237)
